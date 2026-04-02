@@ -1,16 +1,15 @@
 /********************************************************
-  M103Lab4LineSensorCheck (v1.4)
+  M103Phase2Group9
+  By: Nixon Ball and Callahan Lowe
+  Date: 2026-04-01
 
-  Original by H. Fernando, 25/04/2021
-  
-  This code is to help calibrate the line sensor for your setup.
-  Place the robot on the a white surface or black tape and run 
-  the program. Obtain the analog values for black tape and white 
-  surface using the readings provided in the serial monitor.
 *********************************************************/
 
  #include <Servo.h>
  #include <algorithm>
+ #include <Servo.h>  // Includes the library
+  Servo myServoA;  // Makes a servo object to control servo A
+  Servo myServoB;  // Curl Servo
  Servo leftWheel;
  Servo rightWheel;
  
@@ -32,16 +31,18 @@ int rvalue = 0;  //right sensor value
 const int threshold = 1800;
 const int stopPulse = 147;
 int delta = 9;
-float offset = -0.9;
+float offset = -1;
 int value = 0;
 int mv_value = 0;
 int turns = 0;
-int tim;
+int tim = 0;
+bool seen = false;
+int loops = 0;
 
 //PID
-float kp = 2.4;
-float ki = 0.01;
-float kd = 0.7;
+float kp = 1.8;
+float ki = 0.02;
+float kd = 0.5;
 float integral;
 int last_error = 0;
 int last_time = 0;
@@ -53,7 +54,7 @@ const int servoPinA = 11;     // Bucket servomotor #1 pin
 const int servoPinB = 12;     // Bucket servomotor #2 pin
 const int myAngleA1 = 160;    // initial angle, bucket lifts off ground if too high
 int posA = myAngleA1;   // if set to 180, bucket lifts robot off of ground
-const int myAngleA2 = 90;     // highest angle (lift), puts almost straight,
+const int myAngleA2 = 90;     // highest angle (lift), puts almost straight, set to 110
 const int myAngleB1 = 80;
 const int myAngleB2 = 150;
     
@@ -82,6 +83,13 @@ void setup() {
 // Initialize serial and monitor
   Serial.begin(9600); 
   runMotors(0,0);    
+
+  // Set-up servo motors
+  myServoA.write(posA);         // Servo A starting position
+  myServoA.attach(servoPinA);   // Attaches the servo to the servo object
+  myServoB.write(0);
+  myServoB.attach(servoPinB);
+  
   //digitalWrite(YLW, HIGH);
   //while(!Serial);  // wait for serial monitor to open (or reopen)
   //digitalWrite(YLW, LOW);
@@ -90,18 +98,125 @@ void setup() {
   do{
     delay(50);
   }while(digitalRead(BUTTON) == LOW);
+  lift();
+  curl();
 }
 
 // Main Routine
 void loop(){ 
-  //full backwards implimentation
-  delta = 11;
-  offset = 2;
-  kp = 0.3;
 
+     
+  //Normal line follow
   lineDetect();
+  distMeasure();
   float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
-  runMotors(-(delta-offset+left_correct),-delta+left_correct);
+  runMotors(delta-offset+left_correct,delta);
+
+  //When it detects wall
+  if (distMeasure() > distTarget(18)){
+    if(loops == 2){
+      runMotors(0,0);
+      delay(10000000);
+      //IT'S A FUC*ING MIRACLE!!!!
+    }
+    turn_180();
+    lineRecenter(3000);
+    tim = millis();
+    seen = true;
+    //at this point it is facing backwards
+    runMotors(0,0);
+    down();
+    delay(100);
+  }
+
+  while (millis()<tim+800&&seen){
+    lineDetect();
+    float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
+    runMotors(-delta,-delta+offset-1);
+  }
+  if (millis()>tim+800&&seen){
+    if (loops == 1){
+      //runs into wall
+      //lineRecenter(1500);
+      //runMotors(delta-offset,delta);
+      //delay(10);
+      runMotors(0,0);
+      delay(100);
+      //bucket movements
+      runMotors(-delta,-delta-3);
+      delay(3700);
+      runMotors(0,0);
+      delay(100);
+      lift();
+      delay(100);
+      lineRecenter(2000);
+      //follow line again
+      while (distMeasure() < distTarget(15)){
+        //follow line
+        lineDetect();
+        distMeasure();
+        float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
+        runMotors(delta-offset+left_correct,delta);    
+      }
+      turn_180_weighted();
+      lineRecenter(3000);
+      runMotors(0,0);
+      delay(100);
+      runMotors(-delta,-delta-3);
+      delay(3500);
+      runMotors(0,0);
+      delay(100);
+      runMotors(delta-offset,delta);
+      delay(150);
+      runMotors(0,0);
+      drop();
+      lineRecenter(2000);
+      curl();
+      seen=false;
+      loops++;
+    }
+    if (loops == 0){
+      //runs into wall
+      //lineRecenter(1500);
+      //runMotors(delta-offset,delta);
+      //delay(10);
+      runMotors(0,0);
+      delay(100);
+      //bucket movements
+      runMotors(-delta,-delta-2);
+      delay(3700);
+      runMotors(0,0);
+      delay(100);
+      lift();
+      delay(100);
+      lineRecenter(2000);
+      //follow line again
+      while (distMeasure() < distTarget(15)){
+        //follow line
+        lineDetect();
+        distMeasure();
+        float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
+        runMotors(delta-offset+left_correct,delta);    
+      }
+      turn_180_weighted();
+      lineRecenter(3000);
+      runMotors(0,0);
+      delay(100);
+      runMotors(-delta,-delta-3);
+      delay(3500);
+      runMotors(0,0);
+      delay(100);
+      runMotors(delta-offset,delta);
+      delay(150);
+      runMotors(0,0);
+      drop();
+      lineRecenter(2000);
+      curl();
+      seen=false;
+      loops++;
+    }
+  }
+
      
 }
 
@@ -197,11 +312,108 @@ void lineDetect(){
 }
 
 void lineRecenter(int length){
-  for(int i = 0; i<length; i++){
+  for (int i = 0; i<length; i++){
     lineDetect();
-      
     float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
-    runMotors(delta-offset/2+left_correct,delta/2-left_correct);
+    runMotors(delta/2+left_correct,delta/2-left_correct);
     delay(1);
   }
+}
+
+void drop(){
+  for (int posB = myAngleB1; posB <= myAngleB2; posB++){
+    myServoB.write(posB);
+    delay(20);
+  }
+}
+
+void curl(){
+  for (int posB = myAngleB2; posB >= myAngleB1; posB--){
+    myServoB.write(posB);
+    delay(20);
+  }
+}
+
+void lift(){
+  for (posA = myAngleA1; posA >= myAngleA2; posA--) { // Lift action
+    myServoA.write(posA);
+    delay(20);
+  }
+}
+
+void down(){
+  for (posA = myAngleA2; posA <= myAngleA1; posA++) {  // Drop action
+    myServoA.write(posA);
+    delay(20);
+  }
+}
+
+void turn_180(){
+  // stops at distance
+  runMotors(0,0); 
+  delay(100);
+  // goes backwards for 500 ms
+  runMotors(-(delta-offset),-(delta)); 
+  delay(500);
+  runMotors(0,0);
+  delay(100);
+  // left wheel reverse for 300 ms
+  runMotors(-(delta),0);
+  delay(2100); 
+  runMotors(0,0);
+  delay(100);
+  // backwards for some period, removed so it dosen't fall off the table.
+  //runMotors(-(delta-offset),-(delta)); 
+  //delay(600); 
+  //runMotors(0,0);
+  //delay(100);
+  //forward until it sees the line again
+  runMotors(delta-offset,delta);
+  while ((lvalue<threshold)||(rvalue<threshold)) {
+    delay(1);
+    lineDetect();
+  }
+  delay(50);
+  runMotors(0,0);
+  delay(400);
+  //single turn
+  runMotors(-delta,delta);
+  delay(900);
+  runMotors(0,0);
+  delay(400);
+}
+
+void turn_180_weighted(){
+  // stops at distance
+  runMotors(0,0); 
+  delay(100);
+  // goes backwards for 500 ms
+  runMotors(-(delta-offset),-(delta)); 
+  delay(500);
+  runMotors(0,0);
+  delay(100);
+  // left wheel reverse for 300 ms
+  runMotors(-(delta),0);
+  delay(2600); 
+  runMotors(0,0);
+  delay(100);
+  // backwards for some period, removed so it dosen't fall off the table, then added back so it dosen't miss the line.
+  runMotors(-delta,-delta-2); 
+  delay(600); 
+  runMotors(0,0);
+  delay(100);
+  //forward until it sees the line again
+  runMotors(delta-offset,delta);
+  while ((lvalue<threshold)||(rvalue<threshold)) {
+    delay(1);
+    lineDetect();
+  }
+  delay(50);
+  runMotors(0,0);
+  delay(400);
+  //single turn
+  runMotors(-delta,delta);
+  delay(1200);
+  runMotors(0,0);
+  delay(400);
 }
