@@ -59,6 +59,8 @@ const int myAngleA2 = 90;     // highest angle (lift), puts almost straight, set
 const int myAngleB1 = 80;
 const int myAngleB2 = 150;
 
+bool seen = false;
+
 //********** Functions (subroutines) ******************
 
 // Turn on a single LED and turn others off
@@ -68,6 +70,12 @@ void turnOnLED(int COLOUR)
   digitalWrite(YLW, LOW);
   digitalWrite(RED, LOW);
   digitalWrite(COLOUR, HIGH);
+}
+
+void allLEDsoff(){
+  digitalWrite(GRN, LOW);
+  digitalWrite(YLW, LOW);
+  digitalWrite(RED, LOW);
 }
 
 //normalize line following outputs
@@ -256,6 +264,39 @@ void turn_180_weighted(){
   delay(400);
 }
 
+void doubleblack_turn(){
+  if (lvalue>threshold&&rvalue>threshold&&turns<5){ // standard turn into straight-away
+        if (turns == 4)turns++; 
+          delay(100);
+          runMotors(0,0);
+          delay(400);
+          runMotors(-delta,delta);
+          //single turn
+          delay(900);
+          runMotors(0,0);
+          delay(400);
+          for(int i = 0; i<1000; i++){
+            lineDetect();
+        
+            float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
+            runMotors(delta/2+left_correct,delta/2);
+            delay(1);
+          }
+        }
+        if (turns == 5){ // stops after the fifth turn
+          lineDetect();
+        
+          float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
+          runMotors(delta-offset+left_correct,delta);
+          
+          
+          if (millis()>tim+30000){
+            runMotors(0,0);
+            delay(1000000);
+          }  
+        }
+}
+
 // Set-up Routine
 void setup() {
                 
@@ -301,33 +342,41 @@ void setup() {
 }
 
 // Main Routine
-void loop(){ 
-
+void loop() { 
+      allLEDsoff();
+      turnOnLED(RED);
       lineDetect();
       distMeasure();
       
       float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
       runMotors(delta-offset+left_correct,delta);
 
-      while (distMeasure() > distTarget(17)){
+      doubleblack_turn();
+
+      while (distMeasure() > distTarget(17) && (turns % 2 == 0) ){ // bucket pickup
+        allLEDsoff();
+        turnOnLED(GRN);
         turns++;
-        runMotors(0,0); // stops at distance
-        delay(100);
-        runMotors(-(delta-offset),-(delta)); 
-        delay(500); // goes backwards for 500 ms
+        turn_180();
+        lineRecenter(3000);
         runMotors(0,0);
-        delay(100); // stops for 100 ms
-        runMotors(-(delta),0);
-        delay(2100); // left wheel reverse for 300 ms
-        runMotors(0,0);
+        seen = true;
+        down(); // drops bucket down
         delay(100);
-        runMotors(-(delta-offset),-(delta)); 
-        delay(400); // backwards for some period
-        runMotors(0,delta);
-        delay(1300);// right wheel forwards for 300 ms
+        while (millis()<tim+800&&seen){
+          lineDetect();
+          float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
+          runMotors(-delta,-delta+offset-1); // rams into payload for pickup
+        }
         runMotors(0,0);
         delay(100);
-        for(int i = 0; i<2000; i++){
+        runMotors(delta - offset, delta);
+        delay(100);
+        runMotors(0,0);
+        lift();
+        delay(100);
+        lineRecenter(2000);
+        for(int i = 0; i<2000; i++){ // slow exit
           lineDetect();
       
           float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
@@ -337,38 +386,37 @@ void loop(){
          tim = millis();
       }
 
-      if (lvalue>threshold&&rvalue>threshold&&turns<5){
-        if (turns== 4)turns++; 
+      while (distMeasure() > distTarget(17) && (turns % 2 == 1) ){ // bucket dropoff
+        allLEDsoff();
+        turnOnLED(YLW);
+        turns++;
+        runMotors(0,0); // stops at distance
         delay(100);
+        turn_180_weighted();
+        lineRecenter(3000);
         runMotors(0,0);
-        delay(400);
-        runMotors(-delta,delta);
-        //single turn
-        delay(900);
+        delay(100);
+       runMotors(-delta,-delta-3);
+        delay(3500);
+       runMotors(0,0);
+        delay(100);
+        runMotors(delta-offset,delta);
+        delay(150);
         runMotors(0,0);
-        delay(400);
-        for(int i = 0; i<1000; i++){
+        // add slow backup
+
+        drop();
+        
+        for(int i = 0; i<2000; i++){
           lineDetect();
       
           float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
-          runMotors(delta/2+left_correct,delta/2);
+          runMotors(delta-offset/2+left_correct,delta/2);
           delay(1);
         }
+         tim = millis();
       }
-      
-      if (turns==5){
-        lineDetect();
-      
-        float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
-        runMotors(delta-offset+left_correct,delta);
-        
-        
-        if (millis()>tim+30000){
-          runMotors(0,0);
-          delay(1000000);
-        }  
-      }
-
-      delay(1);
 }
 
+    
+      
