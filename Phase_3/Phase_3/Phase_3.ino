@@ -11,10 +11,11 @@
 
  #include <Servo.h>
  #include <algorithm>
+ #include <Servo.h>  // Includes the library
+  Servo myServoA;  // Makes a servo object to control servo A
+  Servo myServoB;  // Curl Servo
  Servo leftWheel;
  Servo rightWheel;
- Servo myServoA;  // Makes a servo object to control servo A
- Servo myServoB;
  
 // Pin Assignments
 const int RED = 10;           //red LED Pin
@@ -25,6 +26,7 @@ int MOTOR_R = 3;
 int MOTOR_L = 4;
 int SHARP = A3;
 
+//Line Sensor pins
 const int LSENSOR = A1; // Left Sensor on Analog Pin 1
 const int RSENSOR = A2; // Right Sensor on Analog Pin 2
 
@@ -34,16 +36,16 @@ int rvalue = 0;  //right sensor value
 const int threshold = 1800;
 const int stopPulse = 147;
 const int delta = 9;
-const float offset = 1.2;
+const float offset = -1;
 int value = 0;
 int mv_value = 0;
 int turns = 0;
 int tim;
 
 //PID
-float kp = 1.8;
+float kp = 1.9;
 float ki = 0.02;
-float kd = 0.7;
+float kd = 0.5;
 float integral;
 int last_error = 0;
 int last_time = 0;
@@ -58,8 +60,146 @@ int posA = myAngleA1;   // if set to 180, bucket lifts robot off of ground
 const int myAngleA2 = 90;     // highest angle (lift), puts almost straight, set to 110
 const int myAngleB1 = 80;
 const int myAngleB2 = 150;
+    
+// Set-up Routine
+void setup() {
+                
+// Initialize led pins as outputs.
+  pinMode(GRN, OUTPUT);
+  pinMode(YLW, OUTPUT);
+  pinMode(RED, OUTPUT);
+  
+// Initialize button pins as inputs
+  pinMode(BUTTON, INPUT);
+  pinMode(SHARP, INPUT);
 
-bool seen = false;
+// Initialize line following sensor pins as inputs
+  pinMode(LSENSOR, INPUT);
+  pinMode(RSENSOR, INPUT);
+
+// Initialize motor control pins as servo pins
+  leftWheel.attach(MOTOR_L);
+  rightWheel.attach(MOTOR_R);
+
+ 
+  
+// Initialize serial and monitor
+  Serial.begin(9600); 
+  runMotors(0,0);    
+
+  // Set-up servo motors
+  myServoA.write(posA);         // Servo A starting position
+  myServoA.attach(servoPinA);   // Attaches the servo to the servo object
+  myServoB.write(0);
+  myServoB.attach(servoPinB);
+  
+  //digitalWrite(YLW, HIGH);
+  //while(!Serial);  // wait for serial monitor to open (or reopen)
+  //digitalWrite(YLW, LOW);
+  //Serial.println(" "); /// line feed
+  //Serial.println("Program ready.");
+  do{
+    delay(50);
+  }while(digitalRead(BUTTON) == LOW);
+  lift();
+  curl();           
+}
+
+// Main Routine
+void loop(){ 
+
+  if (turns%2 == 1){
+    //define PID variables for unweighted
+    kp = 2.4;
+  }
+  else{
+    //define PID variables for unweighted
+    kp = 1.8;
+  }
+
+  //Navigates by following the line normally.
+  distMeasure();
+  lineDetect();
+  float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
+  runMotors(delta-offset+left_correct,delta);
+  
+  while (distMeasure() > distTarget(18)){
+    turns++;
+    if (turns%2 == 1){
+      turn_180();
+      lineRecenter(2000);
+      //at this point it is facing backwards
+      runMotors(0,0);
+      down();
+      delay(100);
+      //runs into wall
+      //lineRecenter(1500);
+      //runMotors(delta-offset,delta);
+      //delay(10);
+      runMotors(0,0);
+      delay(100);
+      //bucket movements
+      runMotors(-delta,-delta-3);
+      delay(3000);
+      runMotors(0,0);
+      delay(100);
+      runMotors(delta-offset,delta);
+      delay(100);
+      runMotors(0,0);
+      lift();
+      delay(100);
+      lineRecenter(2200);
+    }
+    if (turns%2 == 0){
+      turn_180_weighted();
+      lineRecenter(1500);
+      runMotors(0,0);
+      delay(100);
+      runMotors(-delta,-delta-2);
+      delay(3000);
+      runMotors(0,0);
+      delay(100);
+      runMotors(delta-offset,delta);
+      delay(150);
+      runMotors(0,0);
+      drop();
+      lineRecenter(2500);
+      curl();
+    }
+  }
+
+  if (lvalue>threshold&&rvalue>threshold&&turns<5){
+    delay(50);
+    lineDetect();
+    if (lvalue>threshold&&rvalue>threshold&&turns<5){
+      if (turns== 4)turns++; 
+      delay(100);
+      runMotors(0,0);
+      delay(500);
+      runMotors(-delta,delta);
+      //single turn 
+      if (turns%2 == 1)  delay(900);
+      if (turns%2 == 0)  delay(1300);
+      runMotors(0,0);
+      delay(400);
+      lineRecenter(3000);
+      tim = millis();
+    }
+  }
+      
+  if (turns==5){
+    //Navigates by following the line normally.
+    lineDetect();      
+    float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
+    runMotors(delta-offset+left_correct,delta);
+        
+    if (millis()>tim+16000){
+      runMotors(0,0);
+      delay(1000000);
+    }  
+  }
+  delay(1);
+}
 
 //********** Functions (subroutines) ******************
 
@@ -70,12 +210,6 @@ void turnOnLED(int COLOUR)
   digitalWrite(YLW, LOW);
   digitalWrite(RED, LOW);
   digitalWrite(COLOUR, HIGH);
-}
-
-void allLEDsoff(){
-  digitalWrite(GRN, LOW);
-  digitalWrite(YLW, LOW);
-  digitalWrite(RED, LOW);
 }
 
 //normalize line following outputs
@@ -173,7 +307,8 @@ void drop(){
     delay(20);
   }
 }
-  void curl(){
+
+void curl(){
   for (int posB = myAngleB2; posB >= myAngleB1; posB--){
     myServoB.write(posB);
     delay(20);
@@ -240,7 +375,7 @@ void turn_180_weighted(){
   delay(100);
   // left wheel reverse for 300 ms
   runMotors(-(delta),0);
-  delay(2600); 
+  delay(2200); 
   runMotors(0,0);
   delay(100);
   // backwards for some period, removed so it dosen't fall off the table, then added back so it dosen't miss the line.
@@ -263,160 +398,3 @@ void turn_180_weighted(){
   runMotors(0,0);
   delay(400);
 }
-
-void doubleblack_turn(){
-  if (lvalue>threshold&&rvalue>threshold&&turns<5){ // standard turn into straight-away
-        if (turns == 4)turns++; 
-          delay(100);
-          runMotors(0,0);
-          delay(400);
-          runMotors(-delta,delta);
-          //single turn
-          delay(900);
-          runMotors(0,0);
-          delay(400);
-          for(int i = 0; i<1000; i++){
-            lineDetect();
-        
-            float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
-            runMotors(delta/2+left_correct,delta/2);
-            delay(1);
-          }
-        }
-        if (turns == 5){ // stops after the fifth turn
-          lineDetect();
-        
-          float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
-          runMotors(delta-offset+left_correct,delta);
-          
-          
-          if (millis()>tim+30000){
-            runMotors(0,0);
-            delay(1000000);
-          }  
-        }
-}
-
-// Set-up Routine
-void setup() {
-                
-// Initialize led pins as outputs.
-  pinMode(GRN, OUTPUT);
-  pinMode(YLW, OUTPUT);
-  pinMode(RED, OUTPUT);
-  
-// Initialize button pins as inputs
-  pinMode(BUTTON, INPUT);
-  pinMode(SHARP, INPUT);
-
-// Initialize line following sensor pins as inputs
-  pinMode(LSENSOR, INPUT);
-  pinMode(RSENSOR, INPUT);
-
-// Initialize motor control pins as servo pins
-  leftWheel.attach(MOTOR_L);
-  rightWheel.attach(MOTOR_R);
-
- 
-  
-// Initialize serial and monitor
-  Serial.begin(9600); 
-  runMotors(0,0);    
-  //digitalWrite(YLW, HIGH);
-  //while(!Serial);  // wait for serial monitor to open (or reopen)
-  //digitalWrite(YLW, LOW);
-  //Serial.println(" "); /// line feed
-  //Serial.println("Program ready.") 
-
-  // Set-up servo motors
-  myServoA.write(posA);         // Servo A starting position
-  myServoA.attach(servoPinA);   // Attaches the servo to the servo object
-  myServoB.write(0);
-  myServoB.attach(servoPinB);
-  do{
-    delay(50);
-    
-  }while(digitalRead(BUTTON) == LOW);
-  lift();
-  curl();
-}
-
-// Main Routine
-void loop() { 
-      allLEDsoff();
-      turnOnLED(RED);
-      lineDetect();
-      distMeasure();
-      
-      float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
-      runMotors(delta-offset+left_correct,delta);
-
-      doubleblack_turn();
-
-      while (distMeasure() > distTarget(17) && (turns % 2 == 0) ){ // bucket pickup
-        allLEDsoff();
-        turnOnLED(GRN);
-        turns++;
-        turn_180();
-        lineRecenter(3000);
-        runMotors(0,0);
-        seen = true;
-        down(); // drops bucket down
-        delay(100);
-        while (millis()<tim+800&&seen){
-          lineDetect();
-          float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
-          runMotors(-delta,-delta+offset-1); // rams into payload for pickup
-        }
-        runMotors(0,0);
-        delay(100);
-        runMotors(delta - offset, delta);
-        delay(100);
-        runMotors(0,0);
-        lift();
-        delay(100);
-        lineRecenter(2000);
-        for(int i = 0; i<2000; i++){ // slow exit
-          lineDetect();
-      
-          float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
-          runMotors(delta-offset/2+left_correct,delta/2);
-          delay(1);
-        }
-         tim = millis();
-      }
-
-      while (distMeasure() > distTarget(17) && (turns % 2 == 1) ){ // bucket dropoff
-        allLEDsoff();
-        turnOnLED(YLW);
-        turns++;
-        runMotors(0,0); // stops at distance
-        delay(100);
-        turn_180_weighted();
-        lineRecenter(3000);
-        runMotors(0,0);
-        delay(100);
-       runMotors(-delta,-delta-3);
-        delay(3500);
-       runMotors(0,0);
-        delay(100);
-        runMotors(delta-offset,delta);
-        delay(150);
-        runMotors(0,0);
-        // add slow backup
-
-        drop();
-        
-        for(int i = 0; i<2000; i++){
-          lineDetect();
-      
-          float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
-          runMotors(delta-offset/2+left_correct,delta/2);
-          delay(1);
-        }
-         tim = millis();
-      }
-}
-
-    
-      
