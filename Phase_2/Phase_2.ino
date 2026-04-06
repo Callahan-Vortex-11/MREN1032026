@@ -54,7 +54,7 @@ const int servoPinA = 11;     // Bucket servomotor #1 pin
 const int servoPinB = 12;     // Bucket servomotor #2 pin
 const int myAngleA1 = 160;    // initial angle, bucket lifts off ground if too high
 int posA = myAngleA1;   // if set to 180, bucket lifts robot off of ground
-const int myAngleA2 = 90;     // highest angle (lift), puts almost straight, set to 110
+const int myAngleA2 = 95;     // highest angle (lift), puts almost straight, set to 110
 const int myAngleB1 = 80;
 const int myAngleB2 = 150;
     
@@ -170,8 +170,10 @@ void loop(){
       delay(150);
       runMotors(0,0);
       drop();
-      lineRecenter(2000);
+      delay(300);
       curl();
+      lineRecenter(2000);
+      
       seen=false;
       loops++;
     }
