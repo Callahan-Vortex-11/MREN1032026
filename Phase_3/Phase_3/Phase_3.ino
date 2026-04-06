@@ -33,7 +33,7 @@ const int RSENSOR = A2; // Right Sensor on Analog Pin 2
 //global variables
 int lvalue = 0;  //left sensor value
 int rvalue = 0;  //right sensor value
-const int threshold = 1800;
+const int threshold = 1750; // changed from 1800
 const int stopPulse = 147;
 const int delta = 9;
 const float offset = -1;
@@ -110,11 +110,11 @@ void loop(){
 
   if (turns%2 == 1){
     //define PID variables for unweighted
-    kp = 2.4;
+    kp = 2.5;
   }
   else{
-    //define PID variables for unweighted
-    kp = 1.8;
+    //define PID variables for weighted
+    kp = 1.9;
   }
 
   //Navigates by following the line normally.
@@ -125,7 +125,7 @@ void loop(){
   
   while (distMeasure() > distTarget(18)){
     turns++;
-    if (turns%2 == 1){
+    if ((turns%2 == 1) && (turns != 3)){
       turn_180();
       lineRecenter(2000);
       //at this point it is facing backwards
@@ -150,9 +150,13 @@ void loop(){
       delay(100);
       lineRecenter(2200);
     }
-    if (turns%2 == 0){
+    if (turns%2 == 0){ // dropoff
       turn_180_weighted();
-      lineRecenter(1500);
+      runMotors(-(delta-offset), -delta);
+      delay(200);
+      runMotors(0,0);
+      delay(200);
+      lineRecenter(1600);
       runMotors(0,0);
       delay(100);
       runMotors(-delta,-delta-2);
@@ -163,8 +167,44 @@ void loop(){
       delay(150);
       runMotors(0,0);
       drop();
-      lineRecenter(2500);
+      delay(200);
       curl();
+      lineRecenter(2600);
+      
+    }
+    if (turns == 3){ // new code to test almost identical to if turns == 1
+      turn_180();
+      lineRecenter(2000);
+      //at this point it is facing backwards
+      runMotors(0,0);
+      down();
+      delay(100);
+      //runs into wall
+      //lineRecenter(1500);
+      //runMotors(delta-offset,delta);
+      //delay(10);
+      runMotors(0,0);
+      delay(100);
+      // new code to get more wire nuts
+        runMotors(-delta,-delta-3);
+        delay(2000);
+        runMotors(0,0);
+        delay(200);
+        runMotors(delta,0);
+        delay(400);
+        runMotors(0,0);
+        delay(100);
+        runMotors(-delta,-delta-3);
+        delay(800);
+        runMotors(0,0);
+        delay(100);
+      runMotors(delta-offset,delta);
+      delay(100);
+      runMotors(0,0);
+      lift();
+      delay(100);
+      lineRecenter(2200);
+
     }
   }
 
@@ -182,7 +222,7 @@ void loop(){
       if (turns%2 == 0)  delay(1300);
       runMotors(0,0);
       delay(400);
-      lineRecenter(3000);
+      lineRecenter(4000);
       tim = millis();
     }
   }
@@ -193,7 +233,7 @@ void loop(){
     float left_correct = map(update_pid(lvalue,rvalue), -300, 300, -(delta), delta);
     runMotors(delta-offset+left_correct,delta);
         
-    if (millis()>tim+16000){
+    if (millis()>tim+18000){
       runMotors(0,0);
       delay(1000000);
     }  
